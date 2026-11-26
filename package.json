@@ -1,0 +1,28 @@
+{
+  "name": "only-connect",
+  "version": "0.1.0",
+  "description": "Shared browser-to-browser room transport: named failures, observable connection tier, configurable relays and ICE. Transport only; it does not fix client-isolated networks.",
+  "license": "GPL-3.0-only",
+  "type": "module",
+  "main": "only-connect.js",
+  "exports": {
+    ".": "./only-connect.js"
+  },
+  "files": [
+    "only-connect.js",
+    "LICENSE"
+  ],
+  "repository": "github:tejaswigowda/only-connect.js",
+  "scripts": {
+    "test": "node --test test/unit.test.mjs && node test/harness.mjs",
+    "test:unit": "node --test test/unit.test.mjs",
+    "test:harness": "node test/harness.mjs",
+    "vendor": "node scripts/vendor.mjs"
+  },
+  "devDependencies": {
+    "@trystero-p2p/nostr": "0.27.0",
+    "esbuild": "^0.25.0",
+    "playwright": "^1.50.0",
+    "ws": "^8.18.0"
+  }
+}
