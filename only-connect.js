@@ -195,7 +195,6 @@ export function createTracker({
   onGathered = null,
 } = {}) {
   const allPCs = new Set();
-  const observedSockets = new Set();
   const allowed = iceFilter ? new Set(iceFilter) : null;
   const candidateAllowed = (line) => !allowed || allowed.has(/\btyp (\w+)/.exec(line)?.[1]);
 
@@ -253,19 +252,24 @@ export function createTracker({
     }
   }
 
-  function observeSockets() {
-    const NativeWebSocket = globalThis.WebSocket;
-    if (!NativeWebSocket || NativeWebSocket.observed) return;
-    globalThis.WebSocket = class ObservedWebSocket extends NativeWebSocket {
-      static observed = true;
-      constructor(url, ...args) {
-        try { observedSockets.add(new URL(url).host); } catch {}
-        super(url, ...args);
-      }
-    };
-  }
-
   return { PeerConnection: TrackedPC, allPCs, observedSockets, observeSockets };
+}
+
+// Records the host of every WebSocket the page opens, so an app can show which
+// servers it actually talked to. Call it before connect().
+export const observedSockets = new Set();
+
+export function observeSockets() {
+  const NativeWebSocket = globalThis.WebSocket;
+  if (!NativeWebSocket || NativeWebSocket.observed) return observedSockets;
+  globalThis.WebSocket = class ObservedWebSocket extends NativeWebSocket {
+    static observed = true;
+    constructor(url, ...args) {
+      try { observedSockets.add(new URL(url).host); } catch {}
+      super(url, ...args);
+    }
+  };
+  return observedSockets;
 }
 
 // ---------------------------------------------------------------------------
@@ -652,6 +656,14 @@ export async function connect({
     },
     get allPeerConnections() { return tracker.allPCs; },
     getTier: (peerId) => peers.get(peerId)?.tier ?? TIERS.DISCONNECTED,
+    // Low-level link state for diagnostics, or null when the peer is gone.
+    getStatus(peerId) {
+      const pc = room.getPeers()?.[peerId]?.connection;
+      return pc ? { connection: pc.connectionState, ice: pc.iceConnectionState } : null;
+    },
+    disconnect(peerId) {
+      try { room.getPeers()?.[peerId]?.connection?.close(); } catch {}
+    },
     on,
     // Settles with the first ready peer or the first connection-class failure.
     waitForPeer() {
