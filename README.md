@@ -35,10 +35,24 @@ await room.waitForPeer();                     // settles with a peer or a named 
 room.send(peerId, data);
 const channel = room.openChannel(peerId, 'bulk');
 await room.drain(channel);                    // backpressure: high/low water marks
+room.getStatus(peerId);                       // { connection, ice } for diagnostics, or null
+room.disconnect(peerId);
 room.leave();
 ```
 
+`observeSockets()` (call it before `connect()`) records the host of every WebSocket the page opens, for apps that show their own egress. drop-webCLI is the first consumer.
+
 `connect()` rejects with `NO_RELAY_REACHABLE` when no relay answers. Every later failure is an `error` event.
+
+## Upstream tools
+
+`only-connect` is the extracted peer-transport layer used by the webCLI tools:
+
+| tool | uses the transport for |
+| --- | --- |
+| [drop-webCLI](https://github.com/tejaswigowda/drop-webCLI) | room membership and verified browser-to-browser file transfer |
+| [rtc-webCLI](https://github.com/tejaswigowda/rtc-webCLI) | room membership for direct audio, video and screen sharing |
+| [chess-webCLI](https://github.com/tejaswigowda/chess-webCLI) | room membership while keeping the signed game and move protocol application-owned |
 
 ## Failure codes
 
@@ -118,7 +132,31 @@ Apps vendor `only-connect` under a hash-bearing filename and map it in their imp
 node scripts/vendor.mjs path/to/app/lib   # writes only-connect.<hash>.js, prints the import-map entry
 ```
 
-A CDN is a distribution channel for others, not a runtime dependency of the apps. Anything that does load it from a CDN must use a pinned commit SHA with SRI, never a floating tag.
+The default app integration is local and reproducible:
+
+```html
+<script type="importmap">
+{
+  "imports": {
+    "only-connect": "./lib/only-connect.<sha>.js"
+  }
+}
+</script>
+<script type="module">
+  import { connect } from 'only-connect';
+</script>
+```
+
+For a CDN-backed demo or separate release, pin the repository commit and use the full file path:
+
+```html
+<script type="module">
+  import { connect } from
+    'https://cdn.jsdelivr.net/gh/tejaswigowda/only-connect.js@<commit-sha>/only-connect.js';
+</script>
+```
+
+Replace `<commit-sha>` with an immutable commit, not `main`, a branch name or a SemVer/floating tag. Keep the package unchanged from that commit and, when the browser delivery mechanism supports it, verify the CDN response with the matching SHA-256 SRI hash. A CDN is a distribution channel for others, not a runtime dependency of locally vendored apps.
 
 ## Out of scope
 

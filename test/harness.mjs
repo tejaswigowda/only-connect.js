@@ -43,9 +43,14 @@ const browser = await engine.launch(browserName === 'chromium'
     'media.peerconnection.ice.default_address_only': false,
   } });
 
+// The default browser profile, with mDNS host-candidate obfuscation left on.
+// Same-LAN pairs depend on resolving each other's .local names, which a
+// network that blocks multicast DNS breaks while everything else looks normal.
+const defaultBrowser = await engine.launch();
+
 // Joins a room in a fresh page. Returns the page; events accumulate on window.
-async function join({ secret, expiresAt, config = {}, protocolVersion, deny = false, blackhole = false, relays }) {
-  const context = await browser.newContext();
+async function join({ secret, expiresAt, config = {}, protocolVersion, deny = false, blackhole = false, relays, useDefaultBrowser = false }) {
+  const context = await (useDefaultBrowser ? defaultBrowser : browser).newContext();
   const page = await context.newPage();
   page.on('pageerror', (cause) => check('no page error', false, cause.message));
   await page.goto(origin);
@@ -83,7 +88,7 @@ async function join({ secret, expiresAt, config = {}, protocolVersion, deny = fa
       });
       window.__conn = conn;
       const record = (type) => conn.on(type, (event) => window.__events.push({
-        type, code: event.code, peerId: event.peerId, tier: event.tier,
+        type, code: event.code, diagnosis: event.detail?.diagnosis, peerId: event.peerId, tier: event.tier,
         data: event.data, at: Math.round(performance.now() - window.__t0),
       }));
       ['peer', 'peer-left', 'tier', 'error', 'message'].forEach(record);
@@ -212,7 +217,28 @@ try {
     check('ICE failure: ICE_FAILED at the deadline, not a hang', Boolean(failure), `${failure?.at} ms`);
     await close();
   }
+
+  // mDNS-obfuscated host candidates (the browser default). Either the pair
+  // connects, or the failure is named and says why: never a hang.
+  {
+    const config = { stun: [], connectTimeoutMs: 6000 };
+    const { a, b, close } = await pair({ config, useDefaultBrowser: true });
+    const outcome = await Promise.race([
+      until(a.page, (e) => e.type === 'peer', 15_000),
+      until(a.page, (e) => e.type === 'error' && e.code === 'ICE_FAILED', 15_000),
+    ]);
+    const events = await a.page.evaluate(() => window.__events);
+    const failure = events.find((e) => e.type === 'error');
+    check('default profile (mDNS on): connects or fails by name, no hang', Boolean(outcome),
+      failure ? `${failure.code} / ${failure.diagnosis}` : 'connected');
+    if (failure) {
+      check('default profile (mDNS on): a hidden local address is named as such',
+        failure.diagnosis === 'HIDDEN_LOCAL_ADDRESS', failure.diagnosis);
+    }
+    await close();
+  }
 } finally {
+  await defaultBrowser.close();
   await browser.close();
   await relay.close();
   server.close();
